@@ -6,4 +6,5 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pyserial>=3.5",
+    "pyttsx3>=2.99",
 ]
