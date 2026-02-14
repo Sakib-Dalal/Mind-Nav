@@ -36,23 +36,15 @@ RING_BASE  = "#0D2A22"
 
 LABEL_MAP = {
     "REST": 0, "RELAX": 0,
-    "UP":   1, "DOWN":  2,
-    "LEFT": 3, "RIGHT": 4,
-    "CLICK": 5, "STOP":  6,
+    "CLICK": 5,
 }
 
 DIRECTION_ICONS = {
-    "UP": "↑", "DOWN": "↓", "LEFT": "←",
-    "RIGHT": "→", "CLICK": "●", "STOP": "✕",
+    "CLICK": "●",
 }
 
 DIRECTION_COLORS = {
-    "UP":    "#00F5C4",
-    "DOWN":  "#00C8FF",
-    "LEFT":  "#FF9500",
-    "RIGHT": "#A78BFA",
     "CLICK": "#4ADE80",
-    "STOP":  "#FF4060",
 }
 
 
@@ -137,25 +129,8 @@ class BCIApp:
         self.cv.create_line(x0+40, y0+74, x0+cw-40, y0+74,
             fill=RING_BASE, width=1, tags="menu")
 
-        self.cv.create_text(cx, y0+108, text="SELECT  PARADIGM",
+        self.cv.create_text(cx, y0+108, text="CLICK  vs  REST  PARADIGM",
             fill=TEXT_SUB, font=("Courier New", 11), tags="menu")
-
-        self.mode_var = StringVar(value="Arrows + Mouse")
-        modes = ["Arrows", "Mouse", "Arrows + Mouse"]
-        self.mode_btns = {}
-        total_w = len(modes)*134 + (len(modes)-1)*10
-        bx = cx - total_w//2
-        for m in modes:
-            btn = Button(self.root, text=m,
-                font=("Courier New", 12, "bold"),
-                bg=DIM, fg=TEXT_SUB,
-                activebackground=ACCENT, activeforeground=BG,
-                relief=FLAT, bd=0, padx=10, pady=9, cursor="hand2",
-                command=lambda v=m: self._select_mode(v))
-            self.cv.create_window(bx+67, y0+148, window=btn, width=134, tags="menu")
-            self.mode_btns[m] = btn
-            bx += 144
-        self._select_mode("Arrows + Mouse")
 
         self.begin_btn = Button(self.root,
             text="▶   BEGIN  SESSION",
@@ -164,18 +139,12 @@ class BCIApp:
             activebackground="#00C8A0", activeforeground=BG,
             relief=FLAT, bd=0, padx=30, pady=14, cursor="hand2",
             command=self.start_bci)
-        self.cv.create_window(cx, y0+250, window=self.begin_btn,
+        self.cv.create_window(cx, y0+200, window=self.begin_btn,
             width=290, tags="menu")
 
-        self.cv.create_text(cx, y0+318,
+        self.cv.create_text(cx, y0+268,
             text=f"PORT: {PORT}   |   BAUD: {BAUD_RATE}   |   Fs: 256 Hz",
             fill=TEXT_SUB, font=("Courier New", 10), tags="menu")
-
-    def _select_mode(self, val):
-        self.mode_var.set(val)
-        for m, btn in self.mode_btns.items():
-            btn.config(bg=ACCENT if m == val else DIM,
-                       fg=BG     if m == val else TEXT_SUB)
 
     # ── Start session ─────────────────────────────────────────
     def start_bci(self):
@@ -192,11 +161,7 @@ class BCIApp:
         self._draw_static_bg()
         self._build_session_ui()
 
-        self.pool = []
-        if "Arrows" in self.mode_var.get():
-            self.pool += ["UP", "DOWN", "LEFT", "RIGHT"]
-        if "Mouse" in self.mode_var.get():
-            self.pool += ["CLICK", "STOP"]
+        self.pool = ["CLICK"]
 
         with open(FILE_NAME, 'w', newline='') as f:
             csv.writer(f).writerow(
@@ -209,23 +174,19 @@ class BCIApp:
     def _build_session_ui(self):
         cx, cy = self.W//2, self.H//2 - 40
 
-        # Decorative rings
         for r in [168, 208, 248]:
             self.cv.create_oval(cx-r, cy-r, cx+r, cy+r,
                 outline=RING_BASE, width=1)
 
-        # Breathing ring (animated)
         self.ring_pulse = self.cv.create_oval(
             cx-160, cy-160, cx+160, cy+160,
             outline=ACCENT, width=2)
 
-        # Countdown arc
         self.arc_item = self.cv.create_arc(
             cx-186, cy-186, cx+186, cy+186,
             start=90, extent=0,
             outline=ACCENT, width=4, style=ARC)
 
-        # Icon & label
         self.icon_item = self.cv.create_text(
             cx, cy-18, text="",
             fill=ACCENT, font=("Courier New", 190, "bold"), anchor=CENTER)
@@ -234,12 +195,10 @@ class BCIApp:
             cx, cy+134, text="",
             fill=ACCENT, font=("Courier New", 30, "bold"), anchor=CENTER)
 
-        # Recording indicator
         self.status_item = self.cv.create_text(
             self.W-24, 27, text="● RECORDING",
             fill=ACCENT, font=("Courier New", 11), anchor=E)
 
-        # ── Waveform panel ─────────────────────────────────
         wy = self.H - 155
         self.wave_wy  = wy
         self.wave_w   = int(self.W * 0.72)
@@ -262,7 +221,6 @@ class BCIApp:
         self.wave_line = self.cv.create_line(
             0, 0, 1, 1, fill=ACCENT, width=1, smooth=True)
 
-        # ── Stats footer ───────────────────────────────────
         self.stat_trial = self.cv.create_text(
             24, self.H-20, text="TRIAL: 0",
             fill=TEXT_SUB, font=("Courier New", 11), anchor=W)
@@ -351,7 +309,7 @@ class BCIApp:
     def _run_rest(self):
         if not self.is_running:
             return
-        rest_word = random.choice(["REST", "RELAX"])
+        rest_word = "REST"
         self.current_label  = "REST"
         self._stim_start_ms = time.time() * 1000
         self._stim_duration = REST_DURATION
