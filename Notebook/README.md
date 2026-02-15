@@ -1,4 +1,4 @@
-# 🧠 Brain-Computer Interface (BCI) — EEG Click Detection Notebook
+# Mind Nav Brain-Computer Interface (BCI) — EEG Click Detection Notebook
 
 A complete machine-learning and deep-learning pipeline for classifying EEG brain signals into two intent classes: **REST** and **CLICK**. The notebook progresses from raw signal loading all the way through four trained models and saved artefacts ready for deployment.
 
