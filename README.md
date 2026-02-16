@@ -225,12 +225,20 @@ Mind-Nav/
 
 ---
 
+## Media
+
+### Connection
+
+![EEG Headset](Media/connection-with-cable.png)
+
+### Electrode Placement 
+![Electrode Placement](Media/eeg_placement.png)
+
+### 10-20 System
+![10-20 System](Media/10-20-system.png)
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
----
 
-## 📄 License
-
-This project is open source. See the repository for licence details.
