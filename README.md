@@ -8,11 +8,29 @@
 
 ```
 Mind-Nav/
-├── Data/                   # Raw and processed EEG recordings (CSV)
-├── EEG_Recorder/           # C++ application to capture live EEG data from hardware
-├── Mind-Nav-App/           # Python application — real-time BCI navigation controller
-└── Notebook/               # Jupyter notebooks — ML/DL model training & evaluation
-    └── BCI_Notebook_Deep_Learning.ipynb
+├── Data/                       # Raw and processed EEG recordings (CSV)
+├── EEG_Recorder/               # C++ application to capture live EEG data
+├── Microcontroller/            # MicroPython — Pico W LED controller
+│   └── pico_led.py
+├── Mind-Nav-App/               # Python application — unified BCI suite
+│   ├── main.py                 # Unified launcher (entry point)
+│   ├── tester.py               # BCI Real-Time Tester UI
+│   ├── keyboard.py             # BCI Virtual Keyboard UI
+│   ├── config.py               # Shared constants & colour palette
+│   ├── features.py             # 42-feature EEG extraction
+│   ├── models.py               # Model definitions & ModelManager
+│   ├── serial_reader.py        # Arduino serial reader + simulation
+│   ├── pico_server.py          # TCP server for Pico W clients
+│   └── pyproject.toml
+└── Notebook/                   # Jupyter notebooks — model training
+    ├── BCI_Notebook.ipynb
+    ├── BCI_MODEL.joblib
+    ├── BCI_SCALER.joblib
+    ├── BCI_FNN.pt
+    ├── BCI_CNN.pt
+    ├── BCI_Hybrid.pt
+    ├── BCI_Transformer.pt
+    └── BCI_TransformerHybrid.pt
 ```
 
 ---
@@ -26,7 +44,7 @@ Mind-Nav is an end-to-end BCI pipeline built around two mental states:
 | **REST** | `0` | Relaxed, no action intended |
 | **CLICK** | `5` | Active mental intent to click/interact |
 
-EEG signals are captured at **256 Hz**, cleaned, segmented into trials, and fed into four trained classifiers. The best model is then deployed inside the navigation app to issue real-time computer commands purely from brainwave data.
+EEG signals are captured at **256 Hz**, cleaned, segmented into trials, and fed into six trained classifiers. The best model is then deployed inside the navigation app to issue real-time computer commands purely from brainwave data.
 
 ---
 
@@ -92,12 +110,9 @@ Features are extracted per trial across three groups:
 - **Frequency-domain (Welch PSD):** Absolute and relative band power for Delta (0.5–4 Hz), Theta (4–8 Hz), Alpha (8–13 Hz), Beta (13–30 Hz), and Gamma (30–100 Hz); spectral entropy; peak frequency; spectral centroid
 - **Cross-band ratios:** Alpha/Beta, Theta/Alpha, and other clinically motivated power ratios
 
-**Band Power Visualisation**
-- Side-by-side distribution plots for each EEG band across REST vs CLICK
-
 #### Models Trained
 
-Four models are trained and compared using **5-fold Stratified Cross-Validation**:
+Six models are trained and compared using **5-fold Stratified Cross-Validation**:
 
 | # | Model | Input | Architecture |
 |---|---|---|---|
@@ -105,11 +120,10 @@ Four models are trained and compared using **5-fold Stratified Cross-Validation*
 | 2 | **FNN** (PyTorch) | 42 features | 3× `Linear → BatchNorm → ReLU → Dropout(0.4)` → classifier |
 | 3 | **CNN** (PyTorch) | Raw EEG window (256 samples) | 3× `Conv1D → BatchNorm → ReLU → MaxPool → Dropout` → GlobalAvgPool → Linear |
 | 4 | **Hybrid CNN + FNN** (PyTorch) | Raw window + 42 features | Dual-branch: CNN (→128-d) + FNN (→64-d) fused (192-d → MLP → 2 classes) |
+| 5 | **Transformer** (PyTorch) | Raw EEG window (256 samples) | Patch-based Transformer Encoder with CLS token classification |
+| 6 | **Transformer + FNN** (PyTorch) | Raw window + 42 features | Transformer branch + FNN branch fused (128-d → MLP → 2 classes) |
 
 All PyTorch models use the Adam optimiser with a cosine annealing learning-rate schedule and cross-entropy loss.
-
-**Model Comparison**
-- A bar chart displays the mean ± std 5-fold CV accuracy for all four models side by side
 
 #### Saved Artefacts
 
@@ -120,19 +134,50 @@ All PyTorch models use the Adam optimiser with a cosine annealing learning-rate 
 | `BCI_FNN.pt` | PyTorch FNN weights |
 | `BCI_CNN.pt` | PyTorch CNN weights |
 | `BCI_Hybrid.pt` | PyTorch Hybrid CNN+FNN weights |
+| `BCI_Transformer.pt` | PyTorch Transformer weights |
+| `BCI_TransformerHybrid.pt` | PyTorch Transformer+FNN weights |
 
 ---
 
-### 4. `Mind-Nav-App/` — Real-Time Navigation Application (Python)
+### 4. `Mind-Nav-App/` — Unified BCI Application (Python)
 
-The deployment layer of the project. This Python application:
+A single Python application with two modes selectable from a launcher menu:
 
-1. **Reads live EEG data** from the hardware recorder in real time
-2. **Preprocesses** each incoming window using the saved `BCI_SCALER.joblib`
-3. **Runs inference** with the trained models to classify each window as REST or CLICK
-4. **Translates CLICK intents** into computer navigation actions (e.g., mouse clicks, cursor control, or keyboard shortcuts)
+#### 🧠 BCI Real-Time Tester
+- **Reads live EEG data** from the hardware recorder in real time
+- **Runs inference** with trained models to classify each window as REST or CLICK
+- **Side-by-side display**: Actual stimulus vs. Model prediction with confidence bars
+- **Accuracy tracking**: Trial count, correct predictions, session timer
+- **Pico W support**: Optional TCP server broadcasts predictions to connected Pico W clients
 
-This enables hands-free computer interaction driven entirely by mental intent — particularly valuable as an assistive technology for users with motor impairments.
+#### ⌨ BCI Virtual Keyboard
+- **QWERTY scanning keyboard** with row → column selection
+- **Two input modes**: Spacebar (manual) or AI (BCI model)
+- **Live control**: Adjustable scan speed and confidence threshold sliders
+- **Pico W support**: Broadcasts CLICK/REST predictions during AI scanning
+
+**Run with:**
+```bash
+cd Mind-Nav-App
+python main.py
+```
+
+---
+
+### 5. `Microcontroller/` — Pico W LED Controller
+
+A MicroPython script for the Raspberry Pi Pico W that connects to the Mind-Nav app via TCP and controls the on-board LED:
+
+- **LED ON** when the model detects `CLICK` (active mental intent)
+- **LED OFF** when the model detects `REST` (relaxed state)
+- Auto-reconnects on connection loss
+
+**Setup:**
+1. Flash MicroPython firmware onto your Pico W
+2. Edit `WIFI_SSID`, `WIFI_PASS`, and `SERVER_IP` in `pico_led.py`
+3. Copy `pico_led.py` to the Pico W as `main.py`
+4. Enable "Pico W Server" in the Mind-Nav app settings
+5. Power on the Pico W — it will connect automatically
 
 ---
 
@@ -141,7 +186,7 @@ This enables hands-free computer interaction driven entirely by mental intent �
 ### Prerequisites
 
 ```bash
-pip install scikit-learn pandas numpy matplotlib scipy torch torchvision joblib
+pip install scikit-learn pandas numpy matplotlib scipy torch torchvision joblib pyserial
 ```
 
 ### 1. Record EEG Data
@@ -150,18 +195,20 @@ Compile and run the C++ recorder in `EEG_Recorder/` with your EEG headset connec
 
 ### 2. Train the Models
 
-Open and run `Notebook/BCI_Notebook_Deep_Learning.ipynb` end-to-end. This will produce all five model artefact files ready for deployment.
+Open and run `Notebook/BCI_Notebook.ipynb` end-to-end. This will produce all seven model artefact files ready for deployment.
 
-### 3. Run the Navigation App
-
-Place the saved model artefacts alongside the app, then launch:
+### 3. Run the Application
 
 ```bash
 cd Mind-Nav-App
 python main.py
 ```
 
-Put on your EEG headset and focus — a **CLICK** intent triggers a navigation action; **REST** keeps the system idle.
+Select **BCI Tester** to test model accuracy or **BCI Keyboard** to type with your mind.
+
+### 4. (Optional) Set Up Pico W
+
+Follow the steps in [Microcontroller section](#5-microcontroller--pico-w-led-controller) to connect a Pico W for physical LED feedback.
 
 ---
 
@@ -173,8 +220,11 @@ Put on your EEG headset and focus — a **CLICK** intent triggers a navigation a
 | Data Analysis | Python, pandas, NumPy, SciPy |
 | Visualisation | Matplotlib |
 | Classical ML | scikit-learn (ExtraTrees, RandomForest, VotingClassifier) |
-| Deep Learning | PyTorch (FNN, CNN, Hybrid) |
+| Deep Learning | PyTorch (FNN, CNN, Hybrid, Transformer) |
 | Model Persistence | joblib, `torch.save` / `torch.load` |
+| Desktop UI | Tkinter (full-screen canvas) |
+| Microcontroller | MicroPython (Raspberry Pi Pico W) |
+| Communication | TCP Sockets, Serial (USB) |
 
 ---
 
@@ -190,7 +240,7 @@ EEG_Recorder (C++)           ← captures raw brainwave signal at 256 Hz
 Data/ (CSV)                  ← timestamped Signal_mV + intent labels
      │
      ▼
-Notebook (Python)            ← segment → extract 42 features → train 4 models
+Notebook (Python)            ← segment → extract 42 features → train 6 models
      │
      ▼
 Saved Models (.pt / .joblib)
@@ -198,29 +248,8 @@ Saved Models (.pt / .joblib)
      ▼
 Mind-Nav-App (Python)        ← real-time inference → REST / CLICK
      │
-     ▼
-Computer Action              ← hands-free navigation
-```
-
----
-
-## Key Files at a Glance
-
-```
-Mind-Nav/
-├── Data/
-│   └── eeg_precision_bci.csv           # Labelled EEG recordings
-├── EEG_Recorder/
-│   └── ...                             # C++ EEG capture source
-├── Mind-Nav-App/
-│   └── ...                             # Real-time Python BCI navigation app
-└── Notebook/
-    ├── BCI_Notebook_Deep_Learning.ipynb
-    ├── BCI_MODEL.joblib                # Trained sklearn ensemble
-    ├── BCI_SCALER.joblib               # Feature scaler
-    ├── BCI_FNN.pt                      # PyTorch FNN weights
-    ├── BCI_CNN.pt                      # PyTorch CNN weights
-    └── BCI_Hybrid.pt                   # PyTorch Hybrid model weights
+     ├──▶ Virtual Keyboard   ← type with your mind
+     └──▶ Pico W (TCP)       ← LED ON = CLICK, LED OFF = REST
 ```
 
 ---
@@ -231,7 +260,7 @@ Mind-Nav/
 
 ![EEG Headset](Media/connection-with-cable.png)
 
-### Electrode Placement 
+### Electrode Placement
 ![Electrode Placement](Media/eeg_placement.png)
 
 ### 10-20 System
@@ -240,5 +269,3 @@ Mind-Nav/
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-
