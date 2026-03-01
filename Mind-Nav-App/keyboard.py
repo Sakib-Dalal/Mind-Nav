@@ -153,26 +153,83 @@ class VirtualKeyboardApp:
 
         row_y = [y0 + 90, y0 + 145, y0 + 200, y0 + 255, y0 + 310, y0 + 365, y0 + 420]
 
-        # ── Input mode selector ───────────────────────────────────────────
-        self.cv.create_text(x0 + 40, row_y[0], text="INPUT MODE:",
+        # ── Input mode selector (canvas-native radio tiles) ─────────────────
+        self.cv.create_text(x0 + 40, row_y[0] - 2, text="INPUT MODE:",
                             fill=TEXT_SUB, font=("Courier New", 11), anchor="w")
         self._mode_var = tk.StringVar(value="spacebar")
-
         self._ai_widgets: list[tuple[tk.Widget, dict]] = []
         self._ai_canvas_ids: list[int] = []
+        self._mode_items: dict = {}   # mode_val -> {tile, ring, dot}
 
-        mode_frame = tk.Frame(self.root, bg=DIM)
-        mode_frame.place(x=cx - 40, y=row_y[0] - 15, width=300, height=30)
-        for mode_val, mode_text in [("spacebar", "⌨  Spacebar (Manual)"),
-                                     ("ai", "🧠  AI (BCI Model)")]:
-            tk.Radiobutton(
-                mode_frame, text=mode_text, variable=self._mode_var,
-                value=mode_val, bg=DIM, fg=ACCENT,
-                selectcolor=RING_BASE, activebackground=DIM,
-                activeforeground=ACCENT, font=("Courier New", 10),
-                indicatoron=True, cursor="hand2",
-                command=self._on_mode_change,
-            ).pack(side=tk.LEFT, padx=8)
+        mode_opts = [
+            ("spacebar", "Spacebar  (Manual)"),
+            ("ai",       "AI  (BCI Model)"),
+        ]
+        tile_w, tile_h = 230, 40
+        gap = 14
+        total_modes_w = len(mode_opts) * tile_w + (len(mode_opts) - 1) * gap
+        mx0 = cx - total_modes_w // 2
+        my  = row_y[0] - tile_h // 2 + 4
+
+        for col, (mval, mlbl) in enumerate(mode_opts):
+            bx = mx0 + col * (tile_w + gap)
+            by = my
+
+            tile = self.cv.create_rectangle(
+                bx, by, bx + tile_w, by + tile_h,
+                fill="#061410", outline="#0D2A22", width=1,
+                tags=("menu", f"mode_tile_{mval}"))
+
+            r_outer, r_inner = 8, 4
+            rx, ry = bx + 20, by + tile_h // 2
+            ring = self.cv.create_oval(
+                rx - r_outer, ry - r_outer,
+                rx + r_outer, ry + r_outer,
+                outline=TEXT_SUB, width=2, fill="#020D08",
+                tags=("menu", f"mode_ring_{mval}"))
+
+            dot = self.cv.create_oval(
+                rx - r_inner, ry - r_inner,
+                rx + r_inner, ry + r_inner,
+                fill="", outline="",
+                tags=("menu", f"mode_dot_{mval}"))
+
+            self.cv.create_text(
+                rx + r_outer + 10, ry,
+                text=mlbl,
+                fill=TEXT_MAIN,
+                font=("Courier New", 11, "bold"),
+                anchor="w",
+                tags=("menu", f"mode_lbl_{mval}"))
+
+            hit = self.cv.create_rectangle(
+                bx, by, bx + tile_w, by + tile_h,
+                fill="", outline="",
+                tags=("menu", f"mode_hit_{mval}"))
+
+            for item in (tile, ring, dot, hit):
+                self.cv.tag_bind(
+                    item, "<Button-1>",
+                    lambda e, v=mval: self._select_mode(v))
+                self.cv.tag_bind(
+                    item, "<Enter>",
+                    lambda e, tl=tile, rg=ring: self._mode_hover(tl, rg, True))
+                self.cv.tag_bind(
+                    item, "<Leave>",
+                    lambda e, tl=tile, rg=ring, v=mval: self._mode_hover(tl, rg, False, v))
+
+            lbl_tag = f"mode_lbl_{mval}"
+            self.cv.tag_bind(lbl_tag, "<Button-1>",
+                             lambda e, v=mval: self._select_mode(v))
+            self.cv.tag_bind(lbl_tag, "<Enter>",
+                             lambda e, tl=tile, rg=ring: self._mode_hover(tl, rg, True))
+            self.cv.tag_bind(lbl_tag, "<Leave>",
+                             lambda e, tl=tile, rg=ring, v=mval: self._mode_hover(tl, rg, False, v))
+
+            self._mode_items[mval] = {"tile": tile, "ring": ring, "dot": dot}
+
+        # Pre-select default
+        self._select_mode("spacebar")
 
         # ── Arduino port ──────────────────────────────────────────────────
         cid_port = self.cv.create_text(x0 + 40, row_y[1], text="ARDUINO PORT:",
@@ -202,7 +259,7 @@ class VirtualKeyboardApp:
         else:
             self._model_var = tk.StringVar(value="")
             cid_nowarn = self.cv.create_text(cx + 80, row_y[2],
-                                text="⚠  No models found",
+                                text="[!]  No models found",
                                 fill="#FF4D6A", font=("Courier New", 11))
             self._ai_canvas_ids.append(cid_nowarn)
 
@@ -281,7 +338,7 @@ class VirtualKeyboardApp:
 
         # ── Start button ──────────────────────────────────────────────────
         tk.Button(self.root,
-                  text="▶   START  KEYBOARD",
+                  text=">>  START  KEYBOARD",
                   font=("Courier New", 15, "bold"),
                   bg=ACCENT, fg=BG,
                   activebackground="#00C8A0", activeforeground=BG,
@@ -303,6 +360,30 @@ class VirtualKeyboardApp:
     # ══════════════════════════════════════════════════════════════════════
     #  MODE CHANGE
     # ══════════════════════════════════════════════════════════════════════
+    def _select_mode(self, mode_val: str):
+        """Update canvas radio tiles and trigger AI widget visibility."""
+        self._mode_var.set(mode_val)
+        for mval, items in self._mode_items.items():
+            if mval == mode_val:
+                self.cv.itemconfig(items["ring"], outline=ACCENT, width=2, fill="#061410")
+                self.cv.itemconfig(items["dot"],  fill=ACCENT, outline=ACCENT)
+                self.cv.itemconfig(items["tile"], fill="#051A12", outline=ACCENT)
+            else:
+                self.cv.itemconfig(items["ring"], outline=TEXT_SUB, width=2, fill="#020D08")
+                self.cv.itemconfig(items["dot"],  fill="", outline="")
+                self.cv.itemconfig(items["tile"], fill="#061410", outline="#0D2A22")
+        self._on_mode_change()
+
+    def _mode_hover(self, tile_id, ring_id, entering, mode_val=None):
+        """Subtle highlight on hover (skip if tile is already selected)."""
+        is_selected = (mode_val is not None and self._mode_var.get() == mode_val)
+        if entering and not is_selected:
+            self.cv.itemconfig(tile_id, fill="#0A1F18", outline=TEXT_SUB)
+            self.cv.itemconfig(ring_id, outline=TEXT_MAIN)
+        elif not entering and not is_selected:
+            self.cv.itemconfig(tile_id, fill="#061410", outline="#0D2A22")
+            self.cv.itemconfig(ring_id, outline=TEXT_SUB)
+
     def _on_mode_change(self):
         """Show/hide AI-specific widgets based on selected input mode."""
         is_ai = self._mode_var.get() == "ai"
@@ -559,10 +640,10 @@ class VirtualKeyboardApp:
                      font=("Courier New", 8)
                      ).place(x=thresh_slider_x, y=ctrl_y + 6)
 
-        # Live dot
+        # Live dot — top-right of header so it doesn't overlap the title
         self.live_dot = self.cv.create_text(
-            cx, 27, text="● SCANNING",
-            fill=ACCENT, font=("Courier New", 10))
+            self.W - 16, 27, text="● SCANNING",
+            fill=ACCENT, font=("Courier New", 10, "bold"), anchor="e")
 
         # Pico W status
         if self.pico_active:

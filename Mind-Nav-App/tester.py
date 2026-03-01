@@ -72,6 +72,8 @@ class BCITesterApp:
                             bg=BG, highlightthickness=0)
         self.cv.pack(fill=tk.BOTH, expand=True)
         self.root.bind("<Escape>", lambda _e: self._quit())
+        self.root.bind("<space>",  self._on_space)
+        self.is_paused = False
 
         self.root.after(50, self._show_menu)
 
@@ -134,7 +136,7 @@ class BCITesterApp:
         else:
             self._model_var = tk.StringVar(value="")
             self.cv.create_text(cx + 80, row[1],
-                                text="⚠  No models found — check file paths",
+                                text="[!]  No models found — check file paths",
                                 fill=COL_WRONG, font=("Courier New", 11))
 
         # Pico W toggle
@@ -172,7 +174,7 @@ class BCITesterApp:
         # Button
         btn_y = y0 + 396
         tk.Button(self.root,
-                  text="▶   BEGIN  TESTING",
+                  text=">>  BEGIN  TESTING",
                   font=("Courier New", 15, "bold"),
                   bg=ACCENT, fg=BG,
                   activebackground="#00C8A0", activeforeground=BG,
@@ -328,14 +330,27 @@ class BCITesterApp:
         self.stat_clients = self.cv.create_text(
             self.W - 24, sby - 14, text="",
             fill=TEXT_SUB, font=("Courier New", 9), anchor=tk.E)
+        # Status dot — top-right of header so it doesn't overlap title
         self.status_dot = self.cv.create_text(
-            cx, 27, text="● LIVE", fill=ACCENT, font=("Courier New", 10))
+            self.W - 16, 27, text="● LIVE",
+            fill=ACCENT, font=("Courier New", 10, "bold"), anchor=tk.E)
+
+        # PAUSED overlay (hidden until Space is pressed)
+        cx = self.W // 2
+        self._paused_overlay = self.cv.create_rectangle(
+            0, 0, self.W, self.H,
+            fill="#000000", outline="", stipple="gray50", state="hidden")
+        self._paused_text = self.cv.create_text(
+            cx, self.H // 2,
+            text="PAUSED\n\nPress SPACE to resume",
+            fill="#00F5C4", font=("Courier New", 32, "bold"),
+            justify=tk.CENTER, state="hidden")
 
     # ══════════════════════════════════════════════════════════════════════
     #  STIMULUS SEQUENCE
     # ══════════════════════════════════════════════════════════════════════
     def _run_stimulus(self):
-        if not self.is_running:
+        if not self.is_running or self.is_paused:
             return
         self.trial_count += 1
         self.current_label = "CLICK"
@@ -352,7 +367,7 @@ class BCITesterApp:
         self.root.after(STIM_DURATION, self._run_rest)
 
     def _run_rest(self):
-        if not self.is_running:
+        if not self.is_running or self.is_paused:
             return
         self.current_label = "REST"
         self._stim_start_ms = time.time() * 1000
@@ -388,10 +403,10 @@ class BCITesterApp:
         if label_idx == actual_idx:
             self.correct_count += 1
             self.cv.itemconfig(self.match_item,
-                               text="✓  CORRECT", fill=COL_CORRECT)
+                               text="[OK]  CORRECT", fill=COL_CORRECT)
         else:
             self.cv.itemconfig(self.match_item,
-                               text="✗  MISMATCH", fill=COL_WRONG)
+                               text="[X]   MISMATCH", fill=COL_WRONG)
 
         if self.pico_active:
             self.pico_server.broadcast(label_str)
@@ -428,9 +443,10 @@ class BCITesterApp:
     def _animate(self):
         if not self.is_running:
             return
-        self._draw_waveform()
-        self._update_countdown()
-        self._pulse_rings()
+        if not self.is_paused:
+            self._draw_waveform()
+            self._update_countdown()
+            self._pulse_rings()
         self._update_stats()
         self.root.after(33, self._animate)
 
@@ -473,11 +489,32 @@ class BCITesterApp:
         self.cv.itemconfig(self.stat_trial, text=f"TRIAL: {self.trial_count}")
         self.cv.itemconfig(self.stat_accuracy, text=f"ACCURACY: {acc_str}")
         self.cv.itemconfig(self.stat_time, text=f"TIME: {m:02d}:{s:02d}")
-        blink = "● LIVE" if int(time.time() * 2) % 2 == 0 else "○ LIVE"
-        self.cv.itemconfig(self.status_dot, text=blink)
+        if self.is_paused:
+            self.cv.itemconfig(self.status_dot, text="PAUSED", fill="#F59E0B")
+        else:
+            blink = "● LIVE" if int(time.time() * 2) % 2 == 0 else "○ LIVE"
+            self.cv.itemconfig(self.status_dot, text=blink, fill=ACCENT)
         if self.pico_active:
             self.cv.itemconfig(self.stat_clients,
                                text=f"PICO CLIENTS: {self.pico_server.client_count()}")
+
+    def _on_space(self, event):
+        """Pause or resume the tester session (Space bar)."""
+        if not self.is_running or not hasattr(self, '_paused_overlay'):
+            return
+        if not self.is_paused:
+            self.is_paused = True
+            self.cv.itemconfig(self._paused_overlay, state="normal")
+            self.cv.itemconfig(self._paused_text, state="normal")
+            self.cv.tag_raise(self._paused_text)
+            print("[Tester] PAUSED")
+        else:
+            self.is_paused = False
+            self.cv.itemconfig(self._paused_overlay, state="hidden")
+            self.cv.itemconfig(self._paused_text, state="hidden")
+            print("[Tester] RESUMED")
+            # Re-kick the stimulus loop
+            self.root.after(500, self._run_stimulus)
 
     # ══════════════════════════════════════════════════════════════════════
     #  DRAWING HELPERS

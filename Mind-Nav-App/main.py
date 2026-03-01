@@ -2,8 +2,8 @@
 Mind-Nav — Unified Launcher
 ════════════════════════════
 Single entry-point that presents a mode-selection menu:
-  🧠  BCI Real-Time Tester
-  ⌨   BCI Virtual Keyboard
+  [BCI]  BCI Real-Time Tester
+  [KB]   BCI Virtual Keyboard
 
 Run with:  python main.py
 Press ESC to exit at any time.
@@ -102,7 +102,7 @@ class MindNavLauncher:
         btn_w, btn_h = 420, 64
         btn1_y = y0 + 150
         tk.Button(self.root,
-                  text="🧠   BCI  REAL-TIME  TESTER",
+                  text="BCI  REAL-TIME  TESTER",
                   font=("Courier New", 14, "bold"),
                   bg=ACCENT, fg=BG,
                   activebackground="#00C8A0", activeforeground=BG,
@@ -119,7 +119,7 @@ class MindNavLauncher:
         # ── BCI Keyboard button ───────────────────────────────────────────
         btn2_y = btn1_y + btn_h + 40
         tk.Button(self.root,
-                  text="⌨   BCI  VIRTUAL  KEYBOARD",
+                  text="BCI  VIRTUAL  KEYBOARD",
                   font=("Courier New", 14, "bold"),
                   bg=DIM, fg=ACCENT,
                   activebackground=RING_BASE, activeforeground=ACCENT,
