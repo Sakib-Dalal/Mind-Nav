@@ -27,6 +27,7 @@ from config import (
     KEY_SEL_BG, KEY_SEL_TEXT, COL_CLICK, COL_REST,
     CONF_HIGH, CONF_LOW,
     LABEL_NAMES, KEYBOARD_ROWS, WIN_LEN, PORT, SOCKET_PORT,
+    WAVE_POINTS
 )
 from models import ModelManager
 from pico_server import PicoServer
@@ -88,6 +89,15 @@ class VirtualKeyboardApp:
         self.pico_server = PicoServer()
         self.pico_active = False
 
+        # Waveform toggle & rendering
+        self.show_waveform = False
+        self.wave_buf = collections.deque([0.0] * WAVE_POINTS, maxlen=WAVE_POINTS)
+
+        # Debouncing state (cooldown after a CLICK)
+        self.in_cooldown = False
+        self.cooldown_end_time = 0.0
+        self.COOLDOWN_DUR_MS = 600
+
         # Latest prediction info
         self.last_pred_label = "---"
         self.last_pred_conf = 0.0
@@ -136,7 +146,7 @@ class VirtualKeyboardApp:
         self.cv.create_line(x0 + 40, y0 + 72, x0 + cw - 40, y0 + 72,
                             fill=RING_BASE, width=1)
 
-        row_y = [y0 + 110, y0 + 165, y0 + 220, y0 + 275, y0 + 330, y0 + 385]
+        row_y = [y0 + 90, y0 + 145, y0 + 200, y0 + 255, y0 + 310, y0 + 365, y0 + 420]
 
         # ── Input mode selector ───────────────────────────────────────────
         self.cv.create_text(x0 + 40, row_y[0], text="INPUT MODE:",
@@ -236,6 +246,24 @@ class VirtualKeyboardApp:
         self._ai_widgets.append(
             (pico_cb, dict(x=cx - 40, y=row_y[5] - 12)))
 
+        # ── Waveform toggle ──────────────────────────────────────────────
+        cid_wave = self.cv.create_text(x0 + 40, row_y[6],
+                            text="SHOW WAVEFORM:",
+                            fill=TEXT_SUB, font=("Courier New", 11), anchor="w")
+        self._ai_canvas_ids.append(cid_wave)
+        self._wave_var = tk.BooleanVar(value=True)
+        wave_cb = tk.Checkbutton(self.root,
+                       variable=self._wave_var,
+                       text="Live scrolling EEG trace",
+                       font=("Courier New", 10),
+                       fg=TEXT_MAIN, bg=DIM,
+                       activebackground=DIM,
+                       activeforeground=ACCENT,
+                       selectcolor=RING_BASE)
+        wave_cb.place(x=cx - 40, y=row_y[6] - 12)
+        self._ai_widgets.append(
+            (wave_cb, dict(x=cx - 40, y=row_y[6] - 12)))
+
         # ── Errors ────────────────────────────────────────────────────────
         if self.model_mgr.errors:
             ey = y0 + 440
@@ -310,7 +338,12 @@ class VirtualKeyboardApp:
         # Connect serial + Pico W (AI mode only)
         if self.input_mode == "ai":
             port = self._port_var.get().strip()
-            self.serial_reader = SerialReader(port, self.predict_buf)
+            self.show_waveform = self._wave_var.get()
+            
+            # Pass wave_buf to SerialReader only if we want to display it
+            wbuf = self.wave_buf if self.show_waveform else None
+            self.serial_reader = SerialReader(port, self.predict_buf, wbuf)
+            
             self.serial_reader.connect()
 
             if self._pico_var.get():
@@ -370,8 +403,10 @@ class VirtualKeyboardApp:
             width=text_w - 32, tags="text_out")
 
         # ── Keyboard keys ─────────────────────────────────────────────────
+        # Adjust keyboard placement to leave room for the wave display if checked
+        bottom_clearance = 250 if getattr(self, "show_waveform", False) else 160
         key_area_top = text_y + text_h + 30
-        key_area_height = self.H - key_area_top - 160
+        key_area_height = self.H - key_area_top - bottom_clearance
         row_count = len(KEYBOARD_ROWS)
         key_h = min(64, int(key_area_height / row_count) - 10)
         key_gap = 8
@@ -425,7 +460,7 @@ class VirtualKeyboardApp:
             self.key_canvas_ids.append(row_ids)
 
         # ── Status / info bar ─────────────────────────────────────────
-        status_y = self.H - 190
+        status_y = self.H - (280 if getattr(self, "show_waveform", False) else 190)
         self.cv.create_line(40, status_y, self.W - 40, status_y,
                             fill=KEY_BORDER, width=1)
 
@@ -540,6 +575,23 @@ class VirtualKeyboardApp:
             text=hint,
             fill=TEXT_SUB, font=("Courier New", 9))
 
+        # ── Waveform (AI + selected only) ─────────────────────────
+        if self.input_mode == "ai" and getattr(self, "show_waveform", False):
+            wy, ww = self.H - 110, int(self.W * 0.88)
+            self._wave_wy = wy
+            self._wave_ww = ww
+            self._wave_H = 45
+            self.cv.create_rectangle(
+                cx - ww // 2 - 2, wy - self._wave_H - 8,
+                cx + ww // 2 + 2, wy + self._wave_H + 8,
+                fill="#020C09", outline=TEXT_SUB, width=1)
+            self.cv.create_line(cx - ww // 2, wy, cx + ww // 2, wy,
+                                fill=RING_BASE, width=1, dash=(4, 8))
+            self.cv.create_text(cx - ww // 2 - 10, wy, text="EEG",
+                                fill=TEXT_SUB, font=("Courier New", 9), anchor=tk.E)
+            self.wave_line = self.cv.create_line(0, 0, 1, 1,
+                                                 fill=ACCENT, width=1, smooth=True)
+
     # ══════════════════════════════════════════════════════════════════════
     #  SCANNING LOGIC
     # ══════════════════════════════════════════════════════════════════════
@@ -569,6 +621,14 @@ class VirtualKeyboardApp:
         self.root.after(self.scan_speed_ms, self._scan_step)
 
     def _check_for_click(self) -> bool:
+        # Check cooldown
+        if self.in_cooldown:
+            if time.time() >= self.cooldown_end_time:
+                self.in_cooldown = False
+            else:
+                self.last_pred_label = "COOLDOWN"
+                self.last_pred_conf = 0.0
+                return False
         if self.sim_click:
             self.sim_click = False
             self.last_pred_label = "CLICK (SPACE)"
@@ -598,6 +658,9 @@ class VirtualKeyboardApp:
                 self.pico_server.broadcast(LABEL_NAMES[label_idx])
 
             if label_idx == 1 and conf >= self.confidence_threshold:
+                # Click detected, enter cooldown
+                self.in_cooldown = True
+                self.cooldown_end_time = time.time() + (self.COOLDOWN_DUR_MS / 1000.0)
                 return True
         except Exception as e:
             print(f"[Scan] Prediction error: {e}")
@@ -664,6 +727,7 @@ class VirtualKeyboardApp:
 
     def _flash_key_selection(self, ri: int, ki: int):
         """Briefly flash the selected key green."""
+        if not self.is_running: return
         ids = self.key_canvas_ids[ri][ki]
         self.cv.itemconfig(ids["rect"], fill=KEY_SEL_BG, outline=ACCENT)
         self.cv.itemconfig(ids["text"], fill=KEY_SEL_TEXT)
@@ -671,12 +735,14 @@ class VirtualKeyboardApp:
 
     def _flash_row_selection(self):
         """Briefly flash the selected row."""
+        if not self.is_running: return
         for ki, ids in enumerate(self.key_canvas_ids[self.current_row]):
             self.cv.itemconfig(ids["rect"], fill="#004D3D", outline=ACCENT)
         self.root.after(250, self._update_key_visuals)
 
     def _reset_key_style(self, ri, ki):
         """Reset a key to its normal style."""
+        if not self.is_running: return
         ids = self.key_canvas_ids[ri][ki]
         self.cv.itemconfig(ids["rect"], fill=KEY_BG, outline=KEY_BORDER)
         self.cv.itemconfig(ids["text"], fill=KEY_TEXT)
@@ -686,6 +752,9 @@ class VirtualKeyboardApp:
     # ══════════════════════════════════════════════════════════════════════
     def _update_key_visuals(self):
         """Update key highlights based on current scan state."""
+        if not self.is_running:
+            return
+            
         for ri, row_ids in enumerate(self.key_canvas_ids):
             for ki, ids in enumerate(row_ids):
                 if self.scan_phase == self.PHASE_ROW:
@@ -770,8 +839,26 @@ class VirtualKeyboardApp:
         self.cv.itemconfig(self.live_dot, text=blink)
 
         self._pulse_current_key()
+        
+        if getattr(self, "show_waveform", False) and self.input_mode == "ai":
+            self._draw_waveform()
 
         self.root.after(33, self._animate)
+
+    def _draw_waveform(self):
+        buf = list(self.wave_buf)
+        if len(buf) < 2:
+            return
+        cx = self.W // 2
+        ww = self._wave_ww
+        wy = self._wave_wy
+        norm = max(max(abs(v) for v in buf), 1.0)
+        pts = []
+        for i, v in enumerate(buf):
+            x = cx - ww // 2 + int(i / (len(buf) - 1) * ww)
+            y = wy - int((v / norm) * self._wave_H * 0.85)
+            pts += [x, y]
+        self.cv.coords(self.wave_line, *pts)
 
     def _pulse_current_key(self):
         """Add a subtle pulse effect to the current scan target."""

@@ -47,13 +47,13 @@ RING_BASE   = "#0D2A22"
 # Keyboard-specific colours
 KEY_BG        = "#0C1E18"
 KEY_BORDER    = "#1A3A2E"
-KEY_TEXT      = "#8ABFAD"
-KEY_HL_BG     = "#003D30"
+KEY_TEXT      = "#A8E6CF"
+KEY_HL_BG     = "#005C46"
 KEY_HL_BORDER = ACCENT
 KEY_HL_TEXT   = "#FFFFFF"
-KEY_SEL_BG    = ACCENT
-KEY_SEL_TEXT  = BG
-ROW_HL_BG     = "#061A14"
+KEY_SEL_BG    = "#00FFE0"
+KEY_SEL_TEXT  = "#04080F"
+ROW_HL_BG     = "#07241A"
 
 # Shared status colours
 COL_CLICK   = "#4ADE80"
