@@ -84,6 +84,7 @@ class VirtualKeyboardApp:
 
         # EEG data buffer
         self.predict_buf = collections.deque(maxlen=WIN_LEN)
+        self.prob_buf = collections.deque(maxlen=5)
 
         # Models & I/O
         self.model_mgr = ModelManager()
@@ -440,6 +441,7 @@ class VirtualKeyboardApp:
 
         # Reset state
         self.is_running = True
+        self.prob_buf.clear()
         self.typed_text = ""
         self.scan_phase = self.PHASE_ROW
         self.current_row = 0
@@ -744,8 +746,13 @@ class VirtualKeyboardApp:
             return False
 
         try:
-            label_idx, conf = self.model_mgr.predict(
+            label_idx, inst_conf = self.model_mgr.predict(
                 self.selected_model, window)
+            
+            # Smooth the confidence using a moving average
+            self.prob_buf.append(inst_conf)
+            conf = sum(self.prob_buf) / len(self.prob_buf)
+
             self.last_pred_label = LABEL_NAMES[label_idx]
             self.last_pred_conf = conf
 
