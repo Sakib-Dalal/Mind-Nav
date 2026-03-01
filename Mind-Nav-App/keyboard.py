@@ -5,7 +5,8 @@ Mind-Nav — BCI Virtual Keyboard
 • Scans through keys (row → column) automatically
 • Detects mental CLICK via trained BCI models to select keys
 • Supports Arduino EEG input or simulation mode
-• Press SPACEBAR to simulate a click (testing without hardware)
+• Press ENTER to simulate a click (testing without hardware)
+• Press SPACE to pause / resume scanning
 • Optional Pico W server broadcasts CLICK/REST predictions
 
 Press ESC to exit at any time.
@@ -67,6 +68,7 @@ class VirtualKeyboardApp:
         self.selected_model = ""
         self.input_mode = "spacebar"
         self.sim_click = False
+        self.is_paused = False
 
         # Scan state
         self.scan_phase = self.PHASE_ROW
@@ -109,7 +111,9 @@ class VirtualKeyboardApp:
 
         # Bindings
         self.root.bind("<Escape>", lambda _: self._quit())
-        self.root.bind("<space>", self._on_spacebar)
+        self.root.bind("<space>", self._on_space)
+        self.root.bind("<Return>", self._on_enter)
+        self.root.bind("<KP_Enter>", self._on_enter)
         self.root.bind("<BackSpace>", self._on_backspace)
 
         self.root.after(50, self._show_menu)
@@ -290,7 +294,7 @@ class VirtualKeyboardApp:
         self.cv.create_text(
             cx, y0 + 585,
             text=f"Models:  {', '.join(models) if models else 'NONE'}   |   "
-                 f"SPACE = simulate click   |   ESC = quit",
+                 f"ENTER = simulate click   |   SPACE = pause   |   ESC = quit",
             fill=TEXT_SUB, font=("Courier New", 9))
 
         # Apply initial mode visibility
@@ -501,7 +505,7 @@ class VirtualKeyboardApp:
             self.conf_pct_text = None
             self.cv.create_text(
                 60, status_y + 42,
-                text="MODE: SPACEBAR  |  Press SPACE to select",
+                text="MODE: SPACEBAR  |  Press ENTER to select",
                 fill=TEXT_SUB, font=("Courier New", 10), anchor="w")
 
         # Model & mode info
@@ -568,13 +572,23 @@ class VirtualKeyboardApp:
                 fill=ACCENT, font=("Courier New", 9), anchor="e")
 
         # Hint
-        hint = ("SPACE = simulate click   |   BACKSPACE = delete & reset scan   |   ESC = quit"
+        hint = ("ENTER = simulate click   |   SPACE = pause   |   BACKSPACE = delete & reset scan   |   ESC = quit"
                 if self.input_mode == "ai"
-                else "SPACE = select   |   BACKSPACE = delete & reset scan   |   ESC = quit")
+                else "ENTER = select   |   SPACE = pause   |   BACKSPACE = delete & reset scan   |   ESC = quit")
         self.cv.create_text(
             cx, self.H - 28,
             text=hint,
             fill=TEXT_SUB, font=("Courier New", 9))
+
+        # ── PAUSED overlay (hidden until Space is pressed) ─────────────
+        self._paused_overlay = self.cv.create_rectangle(
+            0, 0, self.W, self.H,
+            fill="#000000", outline="", stipple="gray50", state="hidden")
+        self._paused_text = self.cv.create_text(
+            cx, self.H // 2,
+            text="⏸  PAUSED\n\nPress SPACE to resume",
+            fill="#00F5C4", font=("Courier New", 36, "bold"),
+            justify=tk.CENTER, state="hidden")
 
         # ── Waveform (AI + selected only) ─────────────────────────
         if self.input_mode == "ai" and getattr(self, "show_waveform", False):
@@ -597,7 +611,7 @@ class VirtualKeyboardApp:
     #  SCANNING LOGIC
     # ══════════════════════════════════════════════════════════════════════
     def _scan_step(self):
-        if not self.is_running:
+        if not self.is_running or self.is_paused:
             return
 
         # Dynamically read current slider values
@@ -817,9 +831,8 @@ class VirtualKeyboardApp:
                                text=f"{self.last_pred_conf:.0%}",
                                fill=bar_color)
 
-        # Dynamically refresh status bar with current slider values
         mode_str = ("LIVE" if (self.serial_reader and not self.serial_reader.is_simulation)
-                    else "SIMULATION") if self.input_mode == "ai" else "SPACEBAR"
+                     else "SIMULATION") if self.input_mode == "ai" else "SPACEBAR"
         status_str = f"MODE: {mode_str}  |  SPEED: {self.scan_speed_ms}ms"
         if self.input_mode == "ai":
             status_str += f"  |  THRESH: {self.confidence_threshold:.0%}"
@@ -836,11 +849,16 @@ class VirtualKeyboardApp:
         if not self.is_running:
             return
 
-        blink = "● SCANNING" if int(time.time() * 2) % 2 == 0 else "○ SCANNING"
-        self.cv.itemconfig(self.live_dot, text=blink)
+        if self.is_paused:
+            # Keep the dot showing PAUSED in amber
+            self.cv.itemconfig(self.live_dot, text="⏸  PAUSED",
+                               fill="#F59E0B")
+        else:
+            blink = "● SCANNING" if int(time.time() * 2) % 2 == 0 else "○ SCANNING"
+            self.cv.itemconfig(self.live_dot, text=blink, fill=ACCENT)
 
         self._pulse_current_key()
-        
+
         if getattr(self, "show_waveform", False) and self.input_mode == "ai":
             self._draw_waveform()
 
@@ -876,9 +894,27 @@ class VirtualKeyboardApp:
     # ══════════════════════════════════════════════════════════════════════
     #  INPUT HANDLERS
     # ══════════════════════════════════════════════════════════════════════
-    def _on_spacebar(self, event):
-        """Simulate a click when spacebar is pressed."""
-        if self.is_running:
+    def _on_space(self, event):
+        """Pause or resume scanning (Space bar)."""
+        if not self.is_running or not hasattr(self, '_paused_overlay'):
+            return
+        if not self.is_paused:
+            self.is_paused = True
+            self.cv.itemconfig(self._paused_overlay, state="normal")
+            self.cv.itemconfig(self._paused_text, state="normal")
+            self.cv.tag_raise(self._paused_text)
+            print("[Keyboard] PAUSED")
+        else:
+            self.is_paused = False
+            self.cv.itemconfig(self._paused_overlay, state="hidden")
+            self.cv.itemconfig(self._paused_text, state="hidden")
+            print("[Keyboard] RESUMED")
+            # Re-kick the scan loop
+            self.root.after(self.scan_speed_ms, self._scan_step)
+
+    def _on_enter(self, event):
+        """Simulate a click when Enter is pressed."""
+        if self.is_running and not self.is_paused:
             self.sim_click = True
 
     def _on_backspace(self, event):

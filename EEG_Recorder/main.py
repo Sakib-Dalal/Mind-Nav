@@ -104,11 +104,21 @@ class BCIApp:
 
         # State variables
         self.is_running = False
+        self.is_paused = False
         self.current_label = "REST"
         self.trial_count = 0
         self.session_start = None
+        self.session_elapsed = 0.0   # accumulated seconds (survives pauses)
+        self._pause_start = None      # time.time() when paused
         self._stim_start_ms = 0
         self._stim_duration = STIM_DURATION
+
+        # Recording duration limit: None = infinite
+        self.max_duration = None      # seconds; set from menu
+        self._duration_var = None     # tkinter StringVar for menu radio buttons
+
+        # Auto-stop after queued stimulus finishes
+        self._pending_stop = False
 
         # Signal buffer for waveform display
         self.wave_buf = collections.deque([500.0] * WAVE_POINTS, maxlen=WAVE_POINTS)
@@ -136,7 +146,7 @@ class BCIApp:
 
         # Key bindings
         self.root.bind("<Escape>", lambda e: self._quit())
-        self.root.bind("<space>", lambda e: self._toggle_recording())
+        self.root.bind("<space>", lambda e: self._toggle_pause())
 
         # Start animation loop
         self._animate()
@@ -214,9 +224,9 @@ class BCIApp:
     # ───────────────────────────────────────────────────────────────────────
 
     def _build_menu(self):
-        """Build the startup menu with session info."""
+        """Build the startup menu with session info and duration selector."""
         cx, cy = self.W // 2, self.H // 2
-        cw, ch = 540, 400
+        cw, ch = 580, 520
         x0, y0 = cx - cw // 2, cy - ch // 2
 
         # Menu panel with double border
@@ -235,18 +245,116 @@ class BCIApp:
         info_y = y0 + 120
         self.cv.create_text(cx, info_y, text="MOTOR IMAGERY PARADIGM",
                             fill=TEXT_SUB, font=("Courier New", 12, "bold"), tags="menu")
-        self.cv.create_text(cx, info_y + 30, text="Tasks: CLICK (hand movement) vs REST",
+        self.cv.create_text(cx, info_y + 28, text="Tasks: CLICK (hand movement) vs REST",
                             fill=TEXT_SUB, font=("Courier New", 10), tags="menu")
-        self.cv.create_text(cx, info_y + 50, text="Hardware: Arduino + ADS1115 + BioAmp EXG Pill",
+        self.cv.create_text(cx, info_y + 46, text="Hardware: Arduino + ADS1115 + BioAmp EXG Pill",
                             fill=TEXT_SUB, font=("Courier New", 10), tags="menu")
 
         # Connection status
         status_color = "#4ADE80" if self.ser else "#EF4444"
         status_text = "● CONNECTED" if self.ser else "● DISCONNECTED"
-        self.cv.create_text(cx, info_y + 85, text=status_text,
+        self.cv.create_text(cx, info_y + 78, text=status_text,
                             fill=status_color, font=("Courier New", 11, "bold"), tags="menu")
 
-        # Begin button
+        # ── Recording duration selector ──────────────────────────────────────
+        dur_y = info_y + 115
+        self.cv.create_text(cx, dur_y, text="RECORDING  DURATION",
+                            fill=ACCENT, font=("Courier New", 10, "bold"), tags="menu")
+        self.cv.create_line(x0 + 60, dur_y + 14, x0 + cw - 60, dur_y + 14,
+                            fill=RING_BASE, width=1, tags="menu")
+
+        # Duration options: (label, seconds)  — None = infinite
+        self._duration_opts = [
+            ("∞",       None),
+            ("5 min",   5 * 60),
+            ("15 min",  15 * 60),
+            ("30 min",  30 * 60),
+            ("1 hr",    60 * 60),
+            ("2 hr",    120 * 60),
+        ]
+        self.max_duration = None          # default = infinite
+        self._duration_var = StringVar(value="∞")
+
+        # Layout: 3 columns × 2 rows of radio tiles
+        self._radio_items = {}           # label -> {"tile", "ring", "dot"}
+        cols = 3
+        btn_w, btn_h = 160, 44
+        gap_x, gap_y = 18, 12
+
+        total_w = cols * btn_w + (cols - 1) * gap_x
+        bx0 = cx - total_w // 2
+        by0 = dur_y + 30
+
+        for idx, (lbl, secs) in enumerate(self._duration_opts):
+            row = idx // cols
+            col = idx % cols
+            bx = bx0 + col * (btn_w + gap_x)
+            by = by0 + row * (btn_h + gap_y)
+
+            # Background tile
+            tile = self.cv.create_rectangle(
+                bx, by, bx + btn_w, by + btn_h,
+                fill="#061410", outline="#0D2A22", width=1,
+                tags=("menu", f"dur_tile_{lbl}"))
+
+            # Radio outer ring
+            r_outer, r_inner = 9, 5
+            rx, ry = bx + 22, by + btn_h // 2
+            ring = self.cv.create_oval(
+                rx - r_outer, ry - r_outer,
+                rx + r_outer, ry + r_outer,
+                outline=TEXT_SUB, width=2, fill="#020D08",
+                tags=("menu", f"dur_ring_{lbl}"))
+
+            # Inner fill dot (shown when selected)
+            dot = self.cv.create_oval(
+                rx - r_inner, ry - r_inner,
+                rx + r_inner, ry + r_inner,
+                fill="", outline="",
+                tags=("menu", f"dur_dot_{lbl}"))
+
+            # Option label text
+            self.cv.create_text(
+                rx + r_outer + 10, ry,
+                text=lbl,
+                fill=TEXT_MAIN,
+                font=("Courier New", 13, "bold"),
+                anchor=W,
+                tags=("menu", f"dur_lbl_{lbl}"))
+
+            # Invisible hit-zone covers the full tile for easy clicking
+            hit = self.cv.create_rectangle(
+                bx, by, bx + btn_w, by + btn_h,
+                fill="", outline="",
+                tags=("menu", f"dur_hit_{lbl}"))
+
+            # Click + hover bindings on every sub-element
+            for item in (tile, ring, dot, hit):
+                self.cv.tag_bind(
+                    item, "<Button-1>",
+                    lambda e, s=secs, l=lbl: self._select_duration(s, l))
+                self.cv.tag_bind(
+                    item, "<Enter>",
+                    lambda e, tl=tile, rg=ring: self._dur_hover(tl, rg, True))
+                self.cv.tag_bind(
+                    item, "<Leave>",
+                    lambda e, tl=tile, rg=ring, lb=lbl: self._dur_hover(tl, rg, False, lb))
+
+            lbl_tag = f"dur_lbl_{lbl}"
+            self.cv.tag_bind(lbl_tag, "<Button-1>",
+                             lambda e, s=secs, l=lbl: self._select_duration(s, l))
+            self.cv.tag_bind(lbl_tag, "<Enter>",
+                             lambda e, tl=tile, rg=ring: self._dur_hover(tl, rg, True))
+            self.cv.tag_bind(lbl_tag, "<Leave>",
+                             lambda e, tl=tile, rg=ring, lb=lbl: self._dur_hover(tl, rg, False, lb))
+
+            self._radio_items[lbl] = {"tile": tile, "ring": ring, "dot": dot}
+
+        # Pre-select default (∞) with full visual state
+        self._select_duration(None, "∞")
+
+        # ── Begin button ───────────────────────────────────────────────────────
+        btn_area_bottom = by0 + 2 * (btn_h + gap_y) - gap_y
         self.begin_btn = Button(self.root,
                                 text="▶   BEGIN  SESSION",
                                 font=("Courier New", 16, "bold"),
@@ -256,16 +364,47 @@ class BCIApp:
                                 relief=FLAT, bd=0, padx=30, pady=16, cursor="hand2",
                                 command=self.start_bci,
                                 state=NORMAL if self.ser else DISABLED)
-        self.cv.create_window(cx, y0 + 250, window=self.begin_btn,
+        self.cv.create_window(cx, btn_area_bottom + 46, window=self.begin_btn,
                               width=320, tags="menu")
 
         # Technical specs
-        self.cv.create_text(cx, y0 + 320,
+        self.cv.create_text(cx, btn_area_bottom + 110,
                             text=f"PORT: {PORT}",
                             fill=TEXT_SUB, font=("Courier New", 9), tags="menu")
-        self.cv.create_text(cx, y0 + 340,
+        self.cv.create_text(cx, btn_area_bottom + 127,
                             text=f"BAUD: {BAUD_RATE}  |  Fs: 256 Hz  |  ADC: 16-bit",
                             fill=TEXT_SUB, font=("Courier New", 9), tags="menu")
+
+    def _dur_hover(self, tile_id, ring_id, entering, lbl=None):
+        """Highlight a duration tile on hover (skip if it is already selected)."""
+        is_selected = (lbl is not None and self._duration_var.get() == lbl)
+        if entering and not is_selected:
+            self.cv.itemconfig(tile_id, fill="#0A1F18", outline=TEXT_SUB)
+            self.cv.itemconfig(ring_id, outline=TEXT_MAIN)
+        elif not entering and not is_selected:
+            self.cv.itemconfig(tile_id, fill="#061410", outline="#0D2A22")
+            self.cv.itemconfig(ring_id, outline=TEXT_SUB)
+
+    def _select_duration(self, secs, lbl):
+        """Update canvas radio indicators to reflect the chosen duration."""
+        self.max_duration = secs
+        self._duration_var.set(lbl)
+
+        for opt_lbl, items in self._radio_items.items():
+            if opt_lbl == lbl:
+                # Selected: cyan ring + filled dot + accent tile border
+                self.cv.itemconfig(items["ring"], outline=ACCENT, width=2, fill="#061410")
+                self.cv.itemconfig(items["dot"],  fill=ACCENT, outline=ACCENT)
+                self.cv.itemconfig(items["tile"], fill="#051A12", outline=ACCENT)
+            else:
+                # Deselected: dim ring, hidden dot, dark tile
+                self.cv.itemconfig(items["ring"], outline=TEXT_SUB, width=2, fill="#020D08")
+                self.cv.itemconfig(items["dot"],  fill="", outline="")
+                self.cv.itemconfig(items["tile"], fill="#061410", outline="#0D2A22")
+
+    def _set_duration(self, secs):
+        """Store chosen duration limit (None = infinite)."""
+        self.max_duration = secs
 
     # ───────────────────────────────────────────────────────────────────────
     # SESSION START
@@ -287,8 +426,17 @@ class BCIApp:
 
         # Set state
         self.is_running = True
+        self.is_paused = False
+        self._pending_stop = False
         self.session_start = time.time()
+        self.session_elapsed = 0.0
+        self._pause_start = None
         self.trial_count = 0
+
+        # Snapshot duration limit chosen in menu
+        # (max_duration was set by _set_duration via radio buttons)
+        dur_label = "∞" if self.max_duration is None else f"{self.max_duration}s"
+        print(f"[Session] Duration limit: {dur_label}")
 
         # Clear menu and rebuild UI
         for w in self.root.winfo_children():
@@ -302,19 +450,22 @@ class BCIApp:
         # Task pool (which tasks to present)
         self.pool = ["CLICK"]  # Add "SQUEEZE" if using multiple tasks
 
-        # Initialize CSV file
+        # ── CSV: append if file exists, write header only for new files ──────
+        import os
+        file_exists = os.path.isfile(FILE_NAME) and os.path.getsize(FILE_NAME) > 0
         try:
-            with open(FILE_NAME, 'w', newline='') as f:
+            with open(FILE_NAME, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    "Timestamp_Unix",  # Unix timestamp (seconds.microseconds)
-                    "Timestamp_Ms",  # Milliseconds since session start
-                    "Signal_Raw",  # Raw value from Arduino (after filtering)
-                    "Intent_Label",  # Current task label (CLICK/REST/etc.)
-                    "Label_Class"  # Numeric class ID
-                ])
+                if not file_exists:
+                    writer.writerow([
+                        "Timestamp_Unix",
+                        "Timestamp_Ms",
+                        "Signal_Raw",
+                        "Intent_Label",
+                        "Label_Class"
+                    ])
         except Exception as e:
-            messagebox.showerror("File Error", f"Could not create CSV file:\n{e}")
+            messagebox.showerror("File Error", f"Could not open CSV file:\n{e}")
             self.is_running = False
             return
 
@@ -324,7 +475,7 @@ class BCIApp:
         # Start stimulus sequence after short delay
         self.root.after(800, self._run_stimulus)
 
-        print(f"[Session] Recording started → {FILE_NAME}")
+        print(f"[Session] Recording started → {FILE_NAME} (append mode)")
 
     # ───────────────────────────────────────────────────────────────────────
     # UI DRAWING - SESSION
@@ -404,6 +555,19 @@ class BCIApp:
         self.stat_label = self.cv.create_text(
             390, self.H - 20, text="CLASS: 0 [REST]",
             fill=TEXT_SUB, font=("Courier New", 11), anchor=W)
+        self.stat_dur = self.cv.create_text(
+            self.W - 190, self.H - 20, text="LIMIT: ∞",
+            fill=TEXT_SUB, font=("Courier New", 11), anchor=W)
+
+        # PAUSED overlay (hidden initially)
+        self.paused_overlay = self.cv.create_rectangle(
+            0, 0, self.W, self.H,
+            fill="#000000", outline="", stipple="gray50", state="hidden")
+        self.paused_text = self.cv.create_text(
+            self.W // 2, self.H // 2,
+            text="⏸  PAUSED\n\nPress SPACE to resume",
+            fill=ACCENT, font=("Courier New", 36, "bold"),
+            justify=CENTER, state="hidden")
 
     # ───────────────────────────────────────────────────────────────────────
     # ANIMATION LOOP
@@ -478,7 +642,13 @@ class BCIApp:
         if not hasattr(self, 'stat_trial'):
             return
 
-        elapsed = int(time.time() - (self.session_start or time.time()))
+        # Update elapsed only while running and not paused.
+        # Pause compensation: _toggle_pause shifts session_start forward by the
+        # pause duration, so (now - session_start) is always active-only time.
+        if self.is_running and not self.is_paused and self.session_start:
+            self.session_elapsed = time.time() - self.session_start
+
+        elapsed = int(self.session_elapsed)
         m, s = divmod(elapsed, 60)
 
         self.cv.itemconfig(self.stat_trial, text=f"TRIAL: {self.trial_count}")
@@ -488,9 +658,29 @@ class BCIApp:
         self.cv.itemconfig(self.stat_label,
                            text=f"CLASS: {label_class}  [{self.current_label}]")
 
-        # Blinking recording indicator
-        blink = "● RECORDING" if int(time.time() * 2) % 2 == 0 else "○ RECORDING"
-        self.cv.itemconfig(self.status_item, text=blink)
+        # Duration limit display
+        if hasattr(self, 'stat_dur'):
+            if self.max_duration is None:
+                limit_str = "LIMIT: ∞"
+            else:
+                rem = max(0, int(self.max_duration - elapsed))
+                rm, rs = divmod(rem, 60)
+                limit_str = f"REM: {rm:02d}:{rs:02d}"
+            self.cv.itemconfig(self.stat_dur, text=limit_str)
+
+            # Auto-stop when time limit reached
+            if self.max_duration is not None and elapsed >= self.max_duration:
+                if self.is_running and not self._pending_stop:
+                    self._pending_stop = True
+                    self.root.after(0, self._auto_stop)
+
+        # Blinking recording / paused indicator
+        if self.is_paused:
+            self.cv.itemconfig(self.status_item, text="⏸  PAUSED",
+                               fill="#F59E0B")
+        else:
+            blink = "● RECORDING" if int(time.time() * 2) % 2 == 0 else "○ RECORDING"
+            self.cv.itemconfig(self.status_item, text=blink, fill=ACCENT)
 
     # ───────────────────────────────────────────────────────────────────────
     # STIMULUS SEQUENCE
@@ -498,7 +688,7 @@ class BCIApp:
 
     def _run_stimulus(self):
         """Present stimulus (task cue)."""
-        if not self.is_running:
+        if not self.is_running or self.is_paused or self._pending_stop:
             return
 
         # Select random task
@@ -525,7 +715,7 @@ class BCIApp:
 
     def _run_rest(self):
         """Present rest cue."""
-        if not self.is_running:
+        if not self.is_running or self._pending_stop:
             return
 
         rest_word = "REST"
@@ -542,8 +732,9 @@ class BCIApp:
         # Voice cue
         self.speak(rest_word)
 
-        # Schedule next stimulus
-        self.root.after(REST_DURATION, self._run_stimulus)
+        # Schedule next stimulus (skip if pending auto-stop)
+        if not self._pending_stop:
+            self.root.after(REST_DURATION, self._run_stimulus)
 
     # ───────────────────────────────────────────────────────────────────────
     # DATA LOGGER
@@ -556,7 +747,14 @@ class BCIApp:
         with open(FILE_NAME, 'a', newline='') as f:
             writer = csv.writer(f)
 
-            while self.is_running:
+            while self.is_running or self.is_paused:
+                # Skip data while paused (drain buffer silently)
+                if self.is_paused:
+                    if self.ser and self.ser.in_waiting:
+                        self.ser.reset_input_buffer()
+                    time.sleep(0.05)
+                    continue
+
                 if self.ser and self.ser.in_waiting:
                     try:
                         line = self.ser.readline().decode('utf-8', errors='ignore').strip()
@@ -636,12 +834,52 @@ class BCIApp:
     # CONTROLS
     # ───────────────────────────────────────────────────────────────────────
 
-    def _toggle_recording(self):
-        """Pause/resume recording (spacebar)."""
-        if hasattr(self, 'is_running'):
-            self.is_running = not self.is_running
-            status = "RESUMED" if self.is_running else "PAUSED"
-            print(f"[Session] {status}")
+    def _toggle_pause(self):
+        """Pause/resume recording (spacebar). Only active during a session."""
+        if not hasattr(self, 'arc_item'):
+            # Not in a session yet – ignore
+            return
+
+        if not self.is_paused:
+            # ── Pause ─────────────────────────────────────────────────────────
+            self.is_paused = True
+            self._pause_start = time.time()
+            # Show overlay
+            self.cv.itemconfig(self.paused_overlay, state="normal")
+            self.cv.itemconfig(self.paused_text, state="normal")
+            self.cv.tag_raise(self.paused_text)
+            print("[Session] PAUSED")
+        else:
+            # ── Resume ────────────────────────────────────────────────────────
+            if self._pause_start is not None:
+                pause_dur = time.time() - self._pause_start
+                # Shift session_start forward so elapsed doesn't count pause time
+                if self.session_start is not None:
+                    self.session_start += pause_dur
+                self._pause_start = None
+            self.is_paused = False
+            # Hide overlay
+            self.cv.itemconfig(self.paused_overlay, state="hidden")
+            self.cv.itemconfig(self.paused_text, state="hidden")
+            print("[Session] RESUMED")
+            # Re-kick stimulus loop
+            self.root.after(100, self._run_stimulus)
+
+    def _auto_stop(self):
+        """Called when the recording duration limit has been reached."""
+        if not self.is_running:
+            return
+        print("[Session] Duration limit reached – stopping.")
+        self.is_running = False
+        self.is_paused = False
+        if TTS_AVAILABLE:
+            self.speak("Session complete")
+        messagebox.showinfo(
+            "Session Complete",
+            f"The scheduled recording duration has finished.\n"
+            f"Data saved to {FILE_NAME}"
+        )
+        self._quit()
 
     def _quit(self):
         """Cleanup and exit application."""
