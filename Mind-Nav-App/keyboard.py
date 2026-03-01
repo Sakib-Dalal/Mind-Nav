@@ -110,6 +110,7 @@ class VirtualKeyboardApp:
         # Bindings
         self.root.bind("<Escape>", lambda _: self._quit())
         self.root.bind("<space>", self._on_spacebar)
+        self.root.bind("<BackSpace>", self._on_backspace)
 
         self.root.after(50, self._show_menu)
 
@@ -567,9 +568,9 @@ class VirtualKeyboardApp:
                 fill=ACCENT, font=("Courier New", 9), anchor="e")
 
         # Hint
-        hint = ("SPACE = simulate click   |   ESC = quit"
+        hint = ("SPACE = simulate click   |   BACKSPACE = delete & reset scan   |   ESC = quit"
                 if self.input_mode == "ai"
-                else "SPACE = select   |   ESC = quit")
+                else "SPACE = select   |   BACKSPACE = delete & reset scan   |   ESC = quit")
         self.cv.create_text(
             cx, self.H - 28,
             text=hint,
@@ -879,6 +880,20 @@ class VirtualKeyboardApp:
         """Simulate a click when spacebar is pressed."""
         if self.is_running:
             self.sim_click = True
+
+    def _on_backspace(self, event):
+        """Delete last typed character and reset scan to the first row."""
+        if self.is_running:
+            # Remove last character from typed text
+            self.typed_text = self.typed_text[:-1]
+            self._update_text_display()
+            # Reset scan back to row-scan phase, row 0
+            self.scan_phase = self.PHASE_ROW
+            self.current_row = 0
+            self.current_key = 0
+            self.row_cycle_count = 0
+            self.key_cycle_count = 0
+            self._update_key_visuals()
 
     # ══════════════════════════════════════════════════════════════════════
     #  DRAWING HELPERS
