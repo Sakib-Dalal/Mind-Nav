@@ -16,6 +16,7 @@ Features:
 - Dark neural-lab themed interface
 """
 
+import os
 import serial
 import time
 import csv
@@ -958,6 +959,7 @@ def main():
     root.attributes("-fullscreen", True)
     root.resizable(False, False)
     set_window_icon(root)
+    app = BCIApp(root)
     try:
         root.mainloop()
     except KeyboardInterrupt:
