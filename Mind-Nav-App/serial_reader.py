@@ -45,6 +45,7 @@ class SerialReader:
             self.ser = serial.Serial(self.port, BAUD_RATE, timeout=0.01)
             time.sleep(2)
             self.ser.reset_input_buffer()
+            self.ser.write(b"START\n")
             self.is_simulation = False
             print(f"[Serial] Connected on {self.port}")
             return True
@@ -64,6 +65,8 @@ class SerialReader:
         self._running = False
         if self.ser:
             try:
+                self.ser.write(b"STOP\n")
+                time.sleep(0.1)
                 self.ser.close()
             except Exception:
                 pass
@@ -77,10 +80,16 @@ class SerialReader:
                         line = (self.ser.readline()
                                 .decode("utf-8", errors="ignore").strip())
                         if line:
-                            val = float(line) - 500.0
-                            self.predict_buf.append(val)
-                            if self.wave_buf is not None:
-                                self.wave_buf.append(val)
+                            try:
+                                val = float(line)
+                                if math.isnan(val) or math.isinf(val):
+                                    continue
+                                val -= 500.0
+                                self.predict_buf.append(val)
+                                if self.wave_buf is not None:
+                                    self.wave_buf.append(val)
+                            except ValueError:
+                                pass
                     except Exception:
                         pass
                 else:

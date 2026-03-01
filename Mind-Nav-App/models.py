@@ -17,6 +17,9 @@ from features import extract_features
 # ══════════════════════════════════════════════════════════════════════════════
 def build_torch_classes():
     """Import torch and define all model classes. Returns them as a bundle."""
+    import os
+    os.environ.setdefault("PYTORCH_MPS_DISABLE_VALIDATION", "1")
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     import torch
     import torch.nn as nn
 
