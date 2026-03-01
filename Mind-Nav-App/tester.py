@@ -378,6 +378,8 @@ class BCITesterApp:
 
     def _show_prediction(self, label_idx: int, conf: float,
                          actual_label: str):
+        if not self.is_running:
+            return
         label_str = LABEL_NAMES[label_idx]
         color = COL_CLICK if label_str == "CLICK" else COL_REST
         self._set_pred(label_str, color, conf)
