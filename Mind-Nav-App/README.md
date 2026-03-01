@@ -1,5 +1,7 @@
 # Mind-Nav App — Unified BCI Application
 
+![Mind-Nav Logo](../Media/Mind-Nav-Logo.png)
+
 Python desktop application providing two modes of BCI interaction: a real-time model tester and a QWERTY scanning virtual keyboard. Both modes read live EEG data from an Arduino over USB serial and run inference using trained classification models.
 
 ---

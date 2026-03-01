@@ -1,5 +1,7 @@
 # Mind-Nav — Brain-Controlled Navigation via EEG
 
+![Mind-Nav Logo](Media/Mind-Nav-Logo.png)
+
 > Mind-Nav is a full-stack Brain-Computer Interface (BCI) system that captures raw EEG brainwaves, trains machine-learning and deep-learning models to detect mental intent, and translates that intent into real-time navigation actions.
 
 ---

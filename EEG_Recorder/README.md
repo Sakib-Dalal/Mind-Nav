@@ -1,5 +1,7 @@
 # EEG Recorder — Mind-Nav Data Collection Tool
 
+![Mind-Nav Logo](../Media/Mind-Nav-Logo.png)
+
 Standalone fullscreen application for capturing labelled EEG training data using an Arduino, BioAmp EXG Pill, and ADS1115 ADC.
 
 ---

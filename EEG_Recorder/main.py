@@ -937,12 +937,32 @@ def main():
     print("  SPACE - Pause/Resume recording")
     print("=" * 70)
 
+def set_window_icon(root: Tk):
+    """Safely load and set the window icon, handling PyInstaller bundles."""
+    try:
+        # Determine base path (PyInstaller sets sys._MEIPASS)
+        if hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+        icon_path = os.path.join(base_path, "Media", "Mind-Nav-Logo.png")
+        if os.path.exists(icon_path):
+            img = PhotoImage(file=icon_path)
+            root.iconphoto(True, img)
+    except Exception as e:
+        print(f"[Warning] Could not load window icon: {e}")
+
+def main():
+    root = Tk()
+    root.attributes("-fullscreen", True)
+    root.resizable(False, False)
+    set_window_icon(root)
     try:
         root.mainloop()
     except KeyboardInterrupt:
         print("\n[Interrupt] Exiting...")
         app._quit()
-
 
 if __name__ == "__main__":
     main()
