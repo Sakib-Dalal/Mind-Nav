@@ -49,3 +49,13 @@ Data/*.csv
 *.log
 *.tmp
 tmp/
+
+# Rust + Svelte product
+/target/
+node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/gen/
+apps/desktop/test-results/
+apps/desktop/playwright-report/
+!Cargo.lock
+!package-lock.json

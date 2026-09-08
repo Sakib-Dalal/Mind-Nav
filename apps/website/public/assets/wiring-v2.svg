@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540" role="img" aria-labelledby="wiring-title wiring-desc">
+<title id="wiring-title">Mind-Nav v2 logical acquisition wiring</title>
+<desc id="wiring-desc">BioAmp OUT connects to ADS1115 A0. ADS1115 SDA connects to Uno A4, SCL to Uno A5, and ALERT/RDY to Uno D2. ADS1115 ADDR connects to shared acquisition ground. BioAmp, ADS1115 and Uno share acquisition ground and use a supply appropriate for their boards, nominally 5 V in the existing arrangement. This logical diagram does not provide electrical isolation. USB links the acquisition controller to the computer through a suitably isolated arrangement.</desc>
+<defs><pattern id="wiring-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".7" fill="#dce3e8"/></pattern></defs>
+<rect width="900" height="540" rx="10" fill="#f8fafb"/><rect width="900" height="540" fill="url(#wiring-grid)"/>
+<g font-family="Arial, sans-serif" fill="#233d4d">
+<text x="30" y="31" font-size="12" font-weight="700" letter-spacing="2">ACQUISITION ELECTRONICS · PROTOCOL V2</text>
+<g fill="#fff" stroke="#a5b5bf" stroke-width="1.5"><rect x="40" y="120" width="175" height="235" rx="9"/><rect x="338" y="120" width="212" height="270" rx="9"/><rect x="706" y="120" width="156" height="270" rx="9"/></g>
+<g font-size="18" font-weight="700"><text x="60" y="154">BioAmp</text><text x="360" y="154">ADS1115</text><text x="727" y="154">Uno</text></g>
+<g font-size="12" fill="#687c88"><text x="60" y="174">Analog front end</text><text x="360" y="174">16-bit ADC · 0x48</text><text x="727" y="174">Controller</text></g>
+<g stroke="#e0e6ea"><path d="M40 191H215M338 191H550M706 191H862"/></g>
+<g font-family="monospace" font-size="13"><text x="165" y="225">OUT</text><text x="354" y="225">A0</text><text x="486" y="225">SDA</text><text x="720" y="225">A4</text><text x="486" y="272">SCL</text><text x="720" y="272">A5</text><text x="449" y="319">ALERT/RDY</text><text x="720" y="319">D2</text><text x="354" y="363">ADDR</text><text x="97" y="340">GND</text><text x="428" y="371">GND</text><text x="772" y="371">GND</text><text x="101" y="109" fill="#a74344">VCC</text><text x="429" y="109" fill="#a74344">VDD</text><text x="783" y="109" fill="#a74344">5V</text></g>
+<g class="net supply" stroke="#b85c64" fill="none" stroke-width="2"><path d="M125 120V78H800V120M442 78V120"/><g fill="#b85c64" stroke="none"><circle cx="125" cy="120" r="4"/><circle cx="442" cy="120" r="4"/><circle cx="800" cy="120" r="4"/></g></g>
+<text x="244" y="66" fill="#a64d57" font-size="12">Board supply · nominal 5 V · verify each board’s ratings</text>
+<g class="net analog" stroke="#ca6a2e" stroke-width="3"><path d="M215 221H338"/><circle cx="215" cy="221" r="4" fill="#ca6a2e"/><circle cx="338" cy="221" r="4" fill="#ca6a2e"/></g>
+<text x="244" y="209" fill="#a85120" font-size="12">Analog</text>
+<g class="net i2c" stroke="#4977ad" stroke-width="2.5"><path d="M550 221H706"/><circle cx="550" cy="221" r="4" fill="#4977ad"/><circle cx="706" cy="221" r="4" fill="#4977ad"/></g>
+<g class="net i2c" stroke="#8270ae" stroke-width="2.5"><path d="M550 268H706"/><circle cx="550" cy="268" r="4" fill="#8270ae"/><circle cx="706" cy="268" r="4" fill="#8270ae"/></g>
+<text x="590" y="209" fill="#4f7197" font-size="12">I²C data</text><text x="590" y="256" fill="#7b649f" font-size="12">I²C clock</text>
+<g class="net ready" stroke="#db7124" stroke-width="3"><path d="M550 315H706"/><circle cx="550" cy="315" r="4" fill="#db7124"/><circle cx="706" cy="315" r="4" fill="#db7124"/></g>
+<text x="577" y="303" fill="#a95012" font-size="12" font-weight="700">READY · NEW V2</text>
+<g class="net ground" stroke="#668878" stroke-width="2" fill="none"><path d="M113 355V427H784V390M445 390V427M338 359H300V427"/><g fill="#668878" stroke="none"><circle cx="113" cy="355" r="4"/><circle cx="445" cy="390" r="4"/><circle cx="784" cy="390" r="4"/><circle cx="338" cy="359" r="4"/><circle cx="300" cy="427" r="3.5"/><circle cx="445" cy="427" r="3.5"/></g></g>
+<text x="339" y="450" font-size="12" fill="#537362">Shared acquisition ground · ADDR tied low</text>
+<text x="741" y="349" font-size="11" fill="#687c88">USB → host¹</text>
+<path d="M30 474H870" stroke="#d7e0e6"/>
+<text x="30" y="497" font-size="12" fill="#815d34">¹ Logical connections only. Suitable isolation is required before attaching electrodes to a person.</text>
+<text x="30" y="519" font-size="12" fill="#687c88">A0 is on the ADS1115, not the Uno. Supply range and input limits still apply. Pin reference: docs/HARDWARE.md.</text>
+</g></svg>
