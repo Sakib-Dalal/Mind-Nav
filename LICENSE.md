@@ -132,4 +132,4 @@ of your licenses.
 
 ---
 
-Required Notice: Copyright (c) 2026 Sakib Dalal, Harshit Rawal, and Aishwarya Patil(https://github.com/Sakib-Dalal/Mind-Nav)
+Required Notice: Copyright (c) 2026 Sakib Dalal, Harshit Rawal, and Aishwarya Patil (https://github.com/Sakib-Dalal/Mind-Nav)
